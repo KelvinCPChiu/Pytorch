@@ -45,60 +45,104 @@ class MobileNet(nn.Module):
         x = self.conv_dw2(x)
         x = self.conv_s3(x)
         x = torch.sum(torch.sum(x, dim=2), dim=2)
-        x = torch.softmax(x, dim=0)
+        #x = torch.softmax(x, dim=0)
         return x
 
-print('Loading the Dataset')
 
-transform = transforms.Compose(
-    [transforms.ToTensor(),
-     transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
+def train_net(batch_size):
 
-trainset = torchvision.datasets.CIFAR10(root='./data', train=True,
-                                        download=True, transform=transform)
-trainloader = torch.utils.data.DataLoader(trainset, batch_size=5,
-                                          shuffle=True, num_workers=2)
+    print('Loading the Dataset')
 
-testset = torchvision.datasets.CIFAR10(root='./data', train=False,
-                                       download=True, transform=transform)
-testloader = torch.utils.data.DataLoader(testset, batch_size=5,
-                                         shuffle=False, num_workers=2)
+    transform = transforms.Compose(
+        [transforms.ToTensor(),
+         transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
 
-classes = ('plane', 'car', 'bird', 'cat',
-           'deer', 'dog', 'frog', 'horse', 'ship', 'truck')
+    trainset = torchvision.datasets.CIFAR10(root='./data', train=True,
+                                            download=True, transform=transform)
+    trainloader = torch.utils.data.DataLoader(trainset, batch_size=batch_size,
+                                              shuffle=True, num_workers=2)
 
-print('Building Model')
+    print('Building Model')
 
-net = MobileNet().to(device)
-criterion = nn.CrossEntropyLoss()
-optimizer = optim.SGD(net.parameters(), lr=0.001, momentum=0.9)
+    net = MobileNet().to(device)
+    criterion = nn.CrossEntropyLoss()
+    optimizer = optim.Adam(net.parameters(), lr=0.001) #momentum=0.9)
 
-print('Training the Model')
-for epoch in range(2):  # loop over the dataset multiple times
+    print('Training the Model')
+    for epoch in range(10):  # loop over the dataset multiple times
 
-    running_loss = 0.0
-    for i, data in enumerate(trainloader, 0):
-        # get the inputs; data is a list of [inputs, labels]
-        inputs, labels = data
+        running_loss = 0.0
+        for i, data in enumerate(trainloader, 0):
+            # get the inputs; data is a list of [inputs, labels]
+            inputs, labels = data
 
-        inputs = inputs.to(device)
-        labels = labels.to(device)
-        # zero the parameter gradients
-        optimizer.zero_grad()
+            inputs = inputs.to(device)
+            labels = labels.to(device)
+            # zero the parameter gradients
+            optimizer.zero_grad()
 
-        # forward + backward + optimize
-        outputs = net(inputs)
-        loss = criterion(outputs, labels)
-        loss.backward()
-        optimizer.step()
+            # forward + backward + optimize
+            outputs = net(inputs)
+            loss = criterion(outputs, labels)
 
-        # print statistics
-        running_loss += loss.item()
-        if i % 2000 == 1999:    # print every 2000 mini-batches
-            print('[%d, %5d] loss: %.3f' %
-                  (epoch + 1, i + 1, running_loss / 2000))
-            running_loss = 0.0
+            loss.backward()
+            optimizer.step()
 
-print('Finished Training')
+            # print statistics
+            running_loss += loss.item()
+            if i % 2000 == 1999:  # print every 2000 mini-batches
+                print('[%d, %5d] loss: %.3f' %
+                      (epoch + 1, i + 1, running_loss / 2000))
+                running_loss = 0.0
 
-torch.save({'model': net.state_dict()}, './model.pth')
+    print('Finished Training')
+
+    torch.save({'model': net.state_dict()}, './model.pth')
+
+
+def test_net(batch_size):
+
+    net = MobileNet()
+
+    net.load_state_dict(torch.load('./model.pth')['model'])
+    net.to(device)
+
+    class_correct = list([0]*10)
+    class_total = list([0]*10)
+
+    transform = transforms.Compose(
+        [transforms.ToTensor(),
+         transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
+
+    testset = torchvision.datasets.CIFAR10(root='./data', train=False,
+                                           download=True, transform=transform)
+    testloader = torch.utils.data.DataLoader(testset, batch_size=batch_size,
+                                             shuffle=False, num_workers=2)
+
+    classes = ('plane', 'car', 'bird', 'cat',
+               'deer', 'dog', 'frog', 'horse', 'ship', 'truck')
+
+    with torch.no_grad():
+        for data in testloader:
+            images, labels = data
+
+            images = images.to(device)
+            labels = labels.to(device)
+
+            outputs = net(images)
+            _, predicted = torch.max(outputs, 1)
+            c = (predicted == labels).squeeze()
+            #print(c.shape)
+            for i in range(batch_size):
+                label = labels[i]
+                class_correct[label] += c[i].item()
+                class_total[label] += 1
+
+    for i in range(10):
+        print('Accuracy of %5s : %2d %%' % (
+            classes[i], 100 * class_correct[i] / class_total[i]))
+
+
+if __name__ == '__main__':
+    train_net(50)
+    test_net(500)
